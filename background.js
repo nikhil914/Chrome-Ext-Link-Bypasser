@@ -19,6 +19,8 @@ chrome.action.onClicked.addListener((tab) => {
 
 // This function will be injected into the page
 function toggleAutomation(isEnabled) {
+            console.log('toggleAutomation ......................');
+
     if (isEnabled) {
         startAutomationProcess(); // This function will be defined in content.js
     } else {

@@ -26,8 +26,12 @@ function runStartTimerFunctions() {
 
 // Function to handle button clicks as soon as the button becomes visible
 function clickButtonWhenVisible(buttonText) {
+       console.log('clickButtonWhenVisible '+ buttonText);
+
     var checkInterval = setInterval(function() {
         if (clickButtonByText(buttonText)) {
+                   console.log('clickButtonWhenVisible clickButtonByText *********** '+ buttonText);
+
             clearInterval(checkInterval); // Stop checking once the button is clicked
         }
     }, 1000); // Check every second for the button to become visible
@@ -43,8 +47,74 @@ function removeTimer() {
     }
 }
 
+
+// Function to find and click an element (button or div) by its text content
+function clickElementByText(tag, text) {
+    const elements = Array.from(document.querySelectorAll(tag));
+    const el = elements.find(e => e.textContent.trim() === text);
+    if (el) {
+        el.scrollIntoView();
+        el.click();
+        console.log(`Clicked ${tag} with text: "${text}"`);
+        return true;
+    }
+    return false;
+}
+
+// Function to handle clicks when an element becomes visible
+function clickElementWhenVisible(tag, text) {
+    console.log(`Waiting for ${tag} with text: "${text}"...`);
+    const interval = setInterval(() => {
+        if (clickElementByText(tag, text)) {
+            clearInterval(interval);
+            waitForRemoveTimer();
+        }
+    }, 1000);
+}
+
+ function clickElementByText(tag, text) {
+        const elements = Array.from(document.querySelectorAll(tag));
+        const el = elements.find(e => e.textContent.trim() === text);
+        if (el) {
+            el.scrollIntoView();
+            el.click();
+            console.log(`[Bypasser] Clicked ${tag} with text "${text}"`);
+            return true;
+        }
+        removeTimer();
+        return false;
+    }
+
+
+function waitForRemoveTimer(){
+      setTimeout(() => {
+        removeTimer();
+        // Step 3: Try clicking final "Now-Continue" button
+        const clickNowContinue = () => {
+            const btn = document.getElementById('rtg-snp-btn');
+            if (btn) {
+                btn.scrollIntoView();
+                btn.click();
+                console.log('[Bypasser] Clicked final Now-Continue button');
+            } else {
+                setTimeout(clickNowContinue, 1000);
+            }
+        };
+        clickNowContinue();
+    }, 2000);
+}    
+
+
 // Start the process by running timer functions and clicking buttons as they become visible
 function startAutomationProcess() {
+
+
+
+    clickElementWhenVisible('div', 'Click here to verify');
+    waitForRemoveTimer();
+   clickElementWhenVisible('div', 'Now-Continue');
+   clickElementWhenVisible('div', 'Continue');
+
 
         console.log('Automation process started');
 
@@ -68,7 +138,7 @@ function startAutomationProcess() {
     clickButtonWhenVisible('Open-Continue...');
     clickButtonWhenVisible('Get Link');
     clickButtonWhenVisible('Dual Tap Verify');
-
+    clickButtonWhenVisible('Click here to verify');
     clickButtonWhenVisible('Dual Tap "Go Link"'); // Include the new button here
 }
 
