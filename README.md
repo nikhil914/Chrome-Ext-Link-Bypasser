@@ -9,15 +9,18 @@ Bypass Ads for below website
 
 skip the waiting time
 https://linkshortx.in/RvGxHZvJ
-## LinkShortX flow (v1.1)
-linkshortx.in now sends you through 4 "Step X of 4" pages on hindisink.com before the final "Get Link" page.
-Each step page already contains the next-step form, so the extension submits it instantly (no 15–20s timer,
-no 5s hold). If a step page ever comes back (server rejected the skip), it falls back to clicking
-Verify → Continue → Next automatically. On the final linkshortx.in page it opens the Get Link URL as soon as it unlocks.
+## LinkShortX flow (v1.4)
+linkshortx.in -> hindisink.com "Step 1..N of N" -> linkshortx.in "Get Link" -> telegram.me
 
-### v1.2 fixes
-- Fixed "stuck after Click here to verify": the site pauses its countdown whenever the tab is not visible.
-  `lsx-main.js` now runs in the page before the site's scripts, keeps the tab looking visible and runs the
-  step timers at 30 ms, so even a manual/fallback click-through finishes in ~2 s.
-- Fixed the skip guard turning itself off after a few links (step 1 is always `/` and step articles repeat).
-- Fallback click-through no longer gives up after a fixed time.
+Rules measured on the live site:
+- Step 1 can be submitted instantly.
+- Steps 2+ are rejected by the server if submitted less than ~10 s after the page loads (you land on a plain
+  article with no step form). Speeding up the page timer does not help; the server checks real time.
+- A rejected step can be recovered by re-posting the same token a few seconds later.
+
+What the extension does:
+- Step 1: submits instantly.
+- Every later step (any number of steps): submits the hidden next-step form after 11 s (badge top-right shows the countdown).
+  No clicking Verify/Continue needed.
+- If a step is still rejected: re-posts its saved token after 6 s and adds 4 s to the wait for future runs (max 30 s).
+- Final linkshortx.in page: opens the Get Link URL (telegram.me) as soon as it unlocks.

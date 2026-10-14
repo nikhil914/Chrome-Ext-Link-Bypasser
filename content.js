@@ -1,83 +1,118 @@
 // =====================================================================
-// LinkShortX flow (2026-10): linkshortx.in -> hindisink.com "Step 1..4 of 4"
-// pages -> back to linkshortx.in "Get Link" page.
-//
-// Each hindisink step page already contains the next-step form
-// (<form id="fwd" method="post"> with a hidden token). The countdown and
-// "Continue" buttons are purely client-side, and the server accepts the form
-// right away, so we submit it immediately. If the same step page comes back
-// (server rejected the skip), we fall back to clicking through the buttons.
+// LinkShortX flow: linkshortx.in -> hindisink.com "Step 1..N of N" pages
+// -> linkshortx.in "Get Link" page -> telegram.me (final destination).
 // =====================================================================
 (function linkShortXFlow() {
+    // Measured on the live site (2026-10-14):
+    //  - Step 1 can be submitted instantly.
+    //  - Steps 2+ are REJECTED by the server if posted < ~10 s after the page
+    //    loaded (it serves a plain article with no step form = "stuck").
+    //    Speeding up the page's timer can't help: the server checks real time.
+    //  - A rejected step is recoverable: re-posting the same token a few
+    //    seconds later is accepted.
+    // So: submit step 1 at once, wait MIN_WAIT on later steps, and if a step is
+    // still rejected, re-post its saved token and wait a bit longer next time.
     const TAG = '[Bypasser:LinkShortX]';
     const log = (...a) => console.log(TAG, ...a);
+    const PENDING = 'lsx_pending';
+    const DEFAULT_WAIT = 11000, MAX_WAIT = 30000;
 
-    function poll(test, every, maxTries, onHit) {
-        let n = 0;
-        const iv = setInterval(() => {
-            n++;
-            let r = false;
-            try { r = test(); } catch (e) {}
-            if (r) { clearInterval(iv); onHit && onHit(r); }
-            else if (n >= maxTries) clearInterval(iv);
-        }, every);
+    function badge(text) {
+        let b = document.getElementById('lsx-badge');
+        if (!b) {
+            b = document.createElement('div');
+            b.id = 'lsx-badge';
+            b.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;background:#111;color:#fff;' +
+                'font:600 13px/1.3 system-ui,sans-serif;padding:8px 12px;border-radius:8px;box-shadow:0 2px 10px #0006';
+            (document.body || document.documentElement).appendChild(b);
+        }
+        b.textContent = 'Bypasser: ' + text;
     }
-    const isShown = el => !!el && !el.classList.contains('x') && el.offsetParent !== null;
+    function countdown(ms, label, done) {
+        const end = Date.now() + ms;
+        (function tick() {
+            const left = end - Date.now();
+            if (left <= 0) { badge(label + '…'); done(); return; }
+            badge(`${label} in ${Math.ceil(left / 1000)}s`);
+            setTimeout(tick, 250);
+        })();
+    }
+    function getWait(cb) {
+        try { chrome.storage.local.get(['lsxWait'], r => cb(r.lsxWait || DEFAULT_WAIT)); }
+        catch (e) { cb(DEFAULT_WAIT); }
+    }
+    function bumpWait() {
+        getWait(w => { try { chrome.storage.local.set({ lsxWait: Math.min(w + 4000, MAX_WAIT) }); } catch (e) {} });
+    }
+    function postFields(action, fields) {
+        const f = document.createElement('form');
+        f.method = 'post'; f.action = action; f.style.display = 'none';
+        fields.forEach(([k, v]) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); });
+        document.documentElement.appendChild(f);
+        HTMLFormElement.prototype.submit.call(f);
+    }
 
-    // ---- Step pages (hindisink.com and any mirror using the same template) ----
+    // ---- Step pages ("Step X of N", any number of steps) ----
     function handleStepPage() {
         const form = document.getElementById('fwd');
-        const isStepTemplate = form && form.method.toLowerCase() === 'post' &&
-            document.getElementById('pDone') && document.getElementById('go');
-        if (!isStepTemplate) return false;
+        if (!form || form.method.toLowerCase() !== 'post' ||
+            !document.getElementById('go') || !document.getElementById('pDone')) return false;
 
-        // Loop guard: only treat it as "skip rejected" if this same step came back
-        // within a few seconds of us submitting it. (Keying on URL alone broke:
-        // step 1 is always "/" and step articles repeat between links, so old
-        // counts piled up and disabled the skip.)
-        const KEY = 'lsx_last_skip';
-        const step = document.title;
-        let last = null;
-        try { last = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) {}
-        const recent = last && last.step === step && (Date.now() - last.at) < 15000;
-        const tries = recent ? last.tries : 0;
+        const m = document.title.match(/Step\s+(\d+)\s+of\s+(\d+)/i);
+        const stepNo = m ? parseInt(m[1], 10) : 99; // "Your link is ready" = last step
+        const fields = [...form.elements].filter(e => e.name).map(e => [e.name, e.value]);
+        const action = form.action;
 
-        if (tries < 2) {
-            sessionStorage.setItem(KEY, JSON.stringify({ step, at: Date.now(), tries: tries + 1 }));
-            log('Skipping step instantly:', step);
-            // .call() so a field named "submit" can never shadow the method
+        const go = () => {
+            // remember the token so a rejected post can be retried on the next page
+            sessionStorage.setItem(PENDING, JSON.stringify({ action, fields, at: Date.now(), retries: 0 }));
+            log('Submitting', document.title);
             HTMLFormElement.prototype.submit.call(form);
-            return true;
-        }
-
-        // Fallback: the server didn't accept the skip — click through normally.
-        // (lsx-main.js keeps the page "visible" and speeds its timers up.)
-        sessionStorage.removeItem(KEY);
-        log('Instant skip rejected, clicking through:', step);
-        const go = document.getElementById('go');
-        poll(() => !go.disabled && isShown(go) && go, 300, Infinity, b => { b.click(); log('Clicked verify'); });
-        poll(() => { const c = document.getElementById('pCont'); return isShown(c) && c.querySelector('button:not([disabled])'); },
-            300, Infinity, b => { b.click(); log('Clicked Continue'); });
-        poll(() => { const d = document.getElementById('pDone'); return isShown(d) && d.querySelector('button[type=submit],#final'); },
-            300, Infinity, b => { b.click(); log('Clicked next step'); });
+        };
+        if (stepNo === 1) { badge('skipping step 1'); go(); return true; }
+        getWait(wait => countdown(wait, `${document.title.split('·')[0].trim()} → next`, go));
         return true;
     }
 
-    // ---- Final linkshortx.in page (AdLinkFly "Get Link") ----
+    // ---- Rejected step: we posted a token and landed on a plain article ----
+    function handleRejected() {
+        let p = null;
+        try { p = JSON.parse(sessionStorage.getItem(PENDING) || 'null'); } catch (e) {}
+        if (!p || Date.now() - p.at > 120000) return false;
+        const same = u => u.split('#')[0].replace(/\/$/, '') === p.action.split('#')[0].replace(/\/$/, '');
+        if (!same(location.href)) return false;      // we're somewhere else entirely
+        if (p.retries >= 3) { badge('step rejected 3x — finish it manually'); sessionStorage.removeItem(PENDING); return true; }
+        log('Step was rejected (too fast). Retrying the same token…');
+        bumpWait();
+        countdown(6000, 'step rejected, retrying', () => {
+            p.retries++; p.at = Date.now();
+            sessionStorage.setItem(PENDING, JSON.stringify(p));
+            postFields(p.action, p.fields);
+        });
+        return true;
+    }
+
+    // ---- Final linkshortx.in page (AdLinkFly "Get Link") -> telegram.me ----
     function handleGetLinkPage() {
-        if (!document.querySelector('a.get-link') && !document.getElementById('go-link')) return false;
-        log('Waiting for Get Link to unlock...');
-        poll(() => {
+        if (!document.querySelector('a.get-link') || !document.getElementById('go-link')) return false;
+        sessionStorage.removeItem(PENDING);
+        badge('waiting for Get Link');
+        const iv = setInterval(() => {
             const a = document.querySelector('a.get-link');
-            if (!a || /(^|\s)disabled(\s|$)/.test(a.className)) return false;
+            if (!a || /(^|\s)disabled(\s|$)/.test(a.className)) return;
             const href = a.getAttribute('href') || '';
-            if (!href || href === '#' || href.startsWith('javascript')) return false;
-            return a.href;
-        }, 300, 400, url => { log('Opening', url); location.href = url; });
+            if (!href || href === '#' || href.startsWith('javascript')) return;
+            clearInterval(iv);
+            badge('opening link');
+            log('Opening', a.href);
+            location.href = a.href;
+        }, 300);
         return true;
     }
 
-    window.__lsxHandled = handleStepPage() || handleGetLinkPage();
+    // A step page means any earlier pending post was accepted.
+    if (document.getElementById('fwd') && document.getElementById('pDone')) sessionStorage.removeItem(PENDING);
+    window.__lsxHandled = handleStepPage() || handleGetLinkPage() || handleRejected();
 })();
 
 // Function to find and click a button by its text content
@@ -231,5 +266,8 @@ function stopAutomationProcess() {
     // Implement your logic to stop any ongoing automation
 }
 
-// Start the automation process (legacy sites only)
-if (!window.__lsxHandled) startAutomationProcess();
+// Legacy click-by-text flow: only on the old known domains, never on random sites
+const LEGACY_HOSTS = ['dragontales.lat', 'hindisink.com', 'nanotech.org.in', 'softspoker.co.in',
+                      'audioverse.org.in', 'linkshortx.in'];
+const onLegacyHost = LEGACY_HOSTS.some(h => location.hostname === h || location.hostname.endsWith('.' + h));
+if (!window.__lsxHandled && onLegacyHost) startAutomationProcess();

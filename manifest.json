@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Skip Auto Link",
-  "version": "1.2",
+  "version": "1.4",
   "description": "Toggles the automation process on button click.",
   "permissions": [
     "activeTab",
@@ -20,16 +20,6 @@
     }
   },
   "content_scripts": [
-    {
-      "matches": [
-        "https://hindisink.com/*"
-      ],
-      "js": [
-        "lsx-main.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
     {
       "matches": [
         "https://dragontales.lat/*",
