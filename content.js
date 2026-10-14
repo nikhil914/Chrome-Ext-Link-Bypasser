@@ -1,3 +1,76 @@
+// =====================================================================
+// LinkShortX flow (2026-10): linkshortx.in -> hindisink.com "Step 1..4 of 4"
+// pages -> back to linkshortx.in "Get Link" page.
+//
+// Each hindisink step page already contains the next-step form
+// (<form id="fwd" method="post"> with a hidden token). The countdown and
+// "Continue" buttons are purely client-side, and the server accepts the form
+// right away, so we submit it immediately. If the same step page comes back
+// (server rejected the skip), we fall back to clicking through the buttons.
+// =====================================================================
+(function linkShortXFlow() {
+    const TAG = '[Bypasser:LinkShortX]';
+    const log = (...a) => console.log(TAG, ...a);
+
+    function poll(test, every, maxTries, onHit) {
+        let n = 0;
+        const iv = setInterval(() => {
+            n++;
+            let r = false;
+            try { r = test(); } catch (e) {}
+            if (r) { clearInterval(iv); onHit && onHit(r); }
+            else if (n >= maxTries) clearInterval(iv);
+        }, every);
+    }
+    const isShown = el => !!el && !el.classList.contains('x') && el.offsetParent !== null;
+
+    // ---- Step pages (hindisink.com and any mirror using the same template) ----
+    function handleStepPage() {
+        const form = document.getElementById('fwd');
+        const isStepTemplate = form && form.method.toLowerCase() === 'post' &&
+            document.getElementById('pDone') && document.getElementById('go');
+        if (!isStepTemplate) return false;
+
+        // Loop guard: count fast-submits per page in this tab.
+        const key = 'lsx_skip_' + location.pathname + '|' + document.title;
+        const tries = parseInt(sessionStorage.getItem(key) || '0', 10);
+
+        if (tries < 2) {
+            sessionStorage.setItem(key, String(tries + 1));
+            log('Skipping step instantly:', document.title);
+            // .call() so a field named "submit" can never shadow the method
+            HTMLFormElement.prototype.submit.call(form);
+            return true;
+        }
+
+        // Fallback: the server didn't accept the skip — click through normally.
+        log('Instant skip rejected, clicking through:', document.title);
+        const go = document.getElementById('go');
+        poll(() => !go.disabled && go, 300, 100, b => { b.click(); log('Clicked verify'); });
+        poll(() => { const c = document.getElementById('pCont'); return isShown(c) && c.querySelector('button'); },
+            500, 120, b => { b.click(); log('Clicked Continue'); });
+        poll(() => { const d = document.getElementById('pDone'); return isShown(d) && d.querySelector('button[type=submit],#final'); },
+            500, 120, b => { sessionStorage.removeItem(key); b.click(); log('Clicked next step'); });
+        return true;
+    }
+
+    // ---- Final linkshortx.in page (AdLinkFly "Get Link") ----
+    function handleGetLinkPage() {
+        if (!document.querySelector('a.get-link') && !document.getElementById('go-link')) return false;
+        log('Waiting for Get Link to unlock...');
+        poll(() => {
+            const a = document.querySelector('a.get-link');
+            if (!a || /(^|\s)disabled(\s|$)/.test(a.className)) return false;
+            const href = a.getAttribute('href') || '';
+            if (!href || href === '#' || href.startsWith('javascript')) return false;
+            return a.href;
+        }, 300, 400, url => { log('Opening', url); location.href = url; });
+        return true;
+    }
+
+    window.__lsxHandled = handleStepPage() || handleGetLinkPage();
+})();
+
 // Function to find and click a button by its text content
 function clickButtonByText(buttonText) {
     var buttons = Array.from(document.querySelectorAll('button'));
@@ -148,5 +221,5 @@ function stopAutomationProcess() {
     // Implement your logic to stop any ongoing automation
 }
 
-// Start the automation process
-startAutomationProcess();
+// Start the automation process (legacy sites only)
+if (!window.__lsxHandled) startAutomationProcess();
