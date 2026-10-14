@@ -3,19 +3,20 @@
 // -> linkshortx.in "Get Link" page -> telegram.me (final destination).
 // =====================================================================
 (function linkShortXFlow() {
-    // Measured on the live site (2026-10-14):
-    //  - Step 1 can be submitted instantly.
-    //  - Steps 2+ are REJECTED by the server if posted < ~10 s after the page
-    //    loaded (it serves a plain article with no step form = "stuck").
+    // Measured on the live site (2026-10-14), timing kept server-side (session):
+    //  - Step 1: accepted instantly.
+    //  - Steps 2+: rejected at <= 8 s after the page was served, accepted at >= 9 s
+    //    (it serves a plain article with no step form = "stuck").
     //    Speeding up the page's timer can't help: the server checks real time.
-    //  - A rejected step is recoverable: re-posting the same token a few
-    //    seconds later is accepted.
-    // So: submit step 1 at once, wait MIN_WAIT on later steps, and if a step is
-    // still rejected, re-post its saved token and wait a bit longer next time.
+    //  - Tokens are tied to their step (posting step 1's token to the final
+    //    gateway just restarts the flow), so steps can't be skipped.
+    //  - A rejected post doesn't reset the clock; re-posting the same token is fine.
+    // So: submit step 1 at once, later steps at ~9.2 s, and if a step is still
+    // rejected, re-post its saved token every 1.5 s.
     const TAG = '[Bypasser:LinkShortX]';
     const log = (...a) => console.log(TAG, ...a);
     const PENDING = 'lsx_pending';
-    const DEFAULT_WAIT = 11000, MAX_WAIT = 30000;
+    const DEFAULT_WAIT = 9200, MAX_WAIT = 20000, RETRY_DELAY = 1500, MAX_RETRIES = 6;
 
     function badge(text) {
         let b = document.getElementById('lsx-badge');
@@ -38,11 +39,11 @@
         })();
     }
     function getWait(cb) {
-        try { chrome.storage.local.get(['lsxWait'], r => cb(r.lsxWait || DEFAULT_WAIT)); }
+        try { chrome.storage.local.get(['lsxWait15'], r => cb(r.lsxWait15 || DEFAULT_WAIT)); }
         catch (e) { cb(DEFAULT_WAIT); }
     }
     function bumpWait() {
-        getWait(w => { try { chrome.storage.local.set({ lsxWait: Math.min(w + 4000, MAX_WAIT) }); } catch (e) {} });
+        getWait(w => { try { chrome.storage.local.set({ lsxWait15: Math.min(w + 500, MAX_WAIT) }); } catch (e) {} });
     }
     function postFields(action, fields) {
         const f = document.createElement('form');
@@ -81,10 +82,10 @@
         if (!p || Date.now() - p.at > 120000) return false;
         const same = u => u.split('#')[0].replace(/\/$/, '') === p.action.split('#')[0].replace(/\/$/, '');
         if (!same(location.href)) return false;      // we're somewhere else entirely
-        if (p.retries >= 3) { badge('step rejected 3x — finish it manually'); sessionStorage.removeItem(PENDING); return true; }
+        if (p.retries >= MAX_RETRIES) { badge('step keeps getting rejected — finish it manually'); sessionStorage.removeItem(PENDING); return true; }
         log('Step was rejected (too fast). Retrying the same token…');
         bumpWait();
-        countdown(6000, 'step rejected, retrying', () => {
+        countdown(RETRY_DELAY, 'server wants a bit longer, retrying', () => {
             p.retries++; p.at = Date.now();
             sessionStorage.setItem(PENDING, JSON.stringify(p));
             postFields(p.action, p.fields);
