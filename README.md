@@ -8,3 +8,4 @@ Bypass Ads for below website
         "https://hindisink.com/*"
 
 skip the waiting time
+https://linkshortx.in/RvGxHZvJ
