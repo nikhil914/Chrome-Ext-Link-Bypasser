@@ -31,26 +31,35 @@
             document.getElementById('pDone') && document.getElementById('go');
         if (!isStepTemplate) return false;
 
-        // Loop guard: count fast-submits per page in this tab.
-        const key = 'lsx_skip_' + location.pathname + '|' + document.title;
-        const tries = parseInt(sessionStorage.getItem(key) || '0', 10);
+        // Loop guard: only treat it as "skip rejected" if this same step came back
+        // within a few seconds of us submitting it. (Keying on URL alone broke:
+        // step 1 is always "/" and step articles repeat between links, so old
+        // counts piled up and disabled the skip.)
+        const KEY = 'lsx_last_skip';
+        const step = document.title;
+        let last = null;
+        try { last = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) {}
+        const recent = last && last.step === step && (Date.now() - last.at) < 15000;
+        const tries = recent ? last.tries : 0;
 
         if (tries < 2) {
-            sessionStorage.setItem(key, String(tries + 1));
-            log('Skipping step instantly:', document.title);
+            sessionStorage.setItem(KEY, JSON.stringify({ step, at: Date.now(), tries: tries + 1 }));
+            log('Skipping step instantly:', step);
             // .call() so a field named "submit" can never shadow the method
             HTMLFormElement.prototype.submit.call(form);
             return true;
         }
 
         // Fallback: the server didn't accept the skip — click through normally.
-        log('Instant skip rejected, clicking through:', document.title);
+        // (lsx-main.js keeps the page "visible" and speeds its timers up.)
+        sessionStorage.removeItem(KEY);
+        log('Instant skip rejected, clicking through:', step);
         const go = document.getElementById('go');
-        poll(() => !go.disabled && go, 300, 100, b => { b.click(); log('Clicked verify'); });
-        poll(() => { const c = document.getElementById('pCont'); return isShown(c) && c.querySelector('button'); },
-            500, 120, b => { b.click(); log('Clicked Continue'); });
+        poll(() => !go.disabled && isShown(go) && go, 300, Infinity, b => { b.click(); log('Clicked verify'); });
+        poll(() => { const c = document.getElementById('pCont'); return isShown(c) && c.querySelector('button:not([disabled])'); },
+            300, Infinity, b => { b.click(); log('Clicked Continue'); });
         poll(() => { const d = document.getElementById('pDone'); return isShown(d) && d.querySelector('button[type=submit],#final'); },
-            500, 120, b => { sessionStorage.removeItem(key); b.click(); log('Clicked next step'); });
+            300, Infinity, b => { b.click(); log('Clicked next step'); });
         return true;
     }
 
@@ -180,6 +189,7 @@ function waitForRemoveTimer(){
 
 // Start the process by running timer functions and clicking buttons as they become visible
 function startAutomationProcess() {
+    if (window.__lsxHandled) return; // LinkShortX pages have their own handler
 
 
 
